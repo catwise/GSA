@@ -29,13 +29,17 @@ c          2.6  A91113: fixed indexing error for single-source files
 c          2.7  B60715: installed on-demand-randomized temporary work
 c                       files so that more than one instance of gsa can
 c                       run in the same working directory
+c          2.8  B80125: installed CatWISE-specific requirement to match
+c                       mdetID in addition to meet radial-distance rqmt
+c          2.8  B80128: installed option to skip nulls in match fields,
+c                       i.e., treat as not matched
 c
 c-----------------------------------------------------------------------
 c
                      Integer*4  MaxFld, MaxBand
                      Parameter (MaxFld = 1000, MaxBand = 7)
 c
-      Character*5000 Line, ColNam(2), ColTyp(2), Line1, Null1, Null2,
+      Character*5000 Line, ColNam(3), ColTyp(2), Line1, Null1, Null2,
      +               ColTyp3(2), ColTyp4(2)
       Character*250  InFNam1, InFNam2, OutFNam, FilNam, Rej1Nam,
      +               Rej2Nam, StatNam
@@ -66,7 +70,8 @@ c
      +               N1multi, N2multi, Izero, IDBcoll8, IS1(2), IS2(2),
      +               IC1(2), IC2(2), IPa1, IPa2, IPb1, IPb2, NB1, NB2,
      +               IDB2(MaxBand), ISr1(MaxBand), ISr2(MaxBand), IF1,
-     +               IF2, ISys, System, NBands, nColTyp(2), Nct
+     +               IF2, ISys, System, NBands, nColTyp(2), Nct,
+     +               mdetID1, mdetID2, IM1(2), IM2(2)
 c
       Real*8, allocatable :: X1(:), Y1(:), Z1(:), X2(:), Y2(:), Z2(:)
       Real*4, allocatable :: Coord1(:), Coord2(:)
@@ -76,13 +81,13 @@ c
      +               GotD1, GotD2, TblFil(2), GotRD, AllSrc1, AllAssn,
      +               OK, DecOrder, GotMatch, AllSrc2, Reject1, Reject2,
      +               MergOut, IndxOut, BmgColl8, Best2Come, BmgHed,
-     +               GotStat
+     +               GotStat, CatWISE, SkipErr
 c
       Equivalence   (Line, Chr(1))
 c
       Common / VDT / CDate, CTime, Vsn
 c
-      data Vsn/'2.7  B60715'/, NeedHelp/.False./, GotIn1/.False./,
+      data Vsn/'2.8  B80128'/, NeedHelp/.False./, GotIn1/.False./,
      +     GotIn2/.False./, GotA1/.False./, GotA2/.False./, IH2/60/,
      +     GotOut/.False./, GotD1/.False./, GotD2/.False./, NLines/2*0/,
      +     GotRD/.False./,AllSrc1/.True./, AllAssn/.True./, N1single/0/,
@@ -99,7 +104,8 @@ c
      +     BmgColl8/.False./, BmgNam/'gsa%%%%bmg'/, IS1/-9,-9/,
      +     IC1/-9,-9/, NAssns/0/, N2single/0/, BmgHed/.False./,
      +     IF2/0/, IPa1/0/, IPa2/0/, IPb1/0/, IPb2/0/, NB1/1/,
-     +     GotStat/.false./
+     +     GotStat/.false./, CatWISE/.false./, IM1,Im2/4*-9/,
+     +     SkipErr/.false./
 c
 c-----------------------------------------------------------------------
 c
@@ -196,6 +202,12 @@ c
      +'                     the index file name will have "_index"'
         print *,
      +'                     appended)'
+        print *,
+     +  '    -cw             (optional; CatWISE-specific processing)'
+        print *,
+     +'    -se             (optional; skip read errors on match fields;'
+        print *,
+     +'                     treat as unmatchable source)'
         print *
         print *,
      +  'For general source association, the first eight specifications'
@@ -221,13 +233,13 @@ c
         print *,
      +'at the last non-blank character.'
         print *
-        print *,
-     + 'Because gsa uses internally named temporary work files, more'
-        print *,
-     +'than one instance of gsa must not run simultaneously in the same'
-        print *,
-     +'working directory.'
-        print *
+c       print *,
+c    + 'Because gsa uses internally named temporary work files, more'
+c       print *,
+c    +'than one instance of gsa must not run simultaneously in the same'
+c       print *,
+c    +'working directory.'
+c       print *
         print *,
      + 'To collate two bandmerged files, the first three specifications'
         print *,
@@ -250,6 +262,15 @@ c
      +'is intended to allow non-bandmerged files to be processed by'
         print *,
      +'certain utilities; it should not be used with the "-b" option.'
+        print *
+        print *,
+     +  'For CatWISE-specific processing ("-cw"), the first eight'
+        print *,
+     +  'specifications are required; the two mdex files must be'
+        print *,
+     +  'specified with the "-t" flag; in addition to the usual radial-'
+        print *,
+     +  'distance requirement, the "mdetID" values must match.'
         call exit(32)
       end if
 c
@@ -590,6 +611,12 @@ c
         end if
         IndxOut = .True.
 c
+      Else If (Flag .eq. '-cw') then
+        CatWISE = .true.
+c
+      Else If (Flag .eq. '-se') then
+        SkipErr = .true.
+c
       Else
         print *,'Unrecognized flag: ',Flag
         NeedHelp = .True.
@@ -654,7 +681,7 @@ c
      +           RAstr1, Decstr1, IA1(1), IA2(1), ID1(1), ID2(1),
      +           RAmax(1), RAmin(1), Decmax(1), Decmin(1), nColTyp(1),
      +           Field1, IF1a, IF1b, NF1, ColTyp3(1), ColTyp4(1),
-     +           NLines(1), LRecL(1), InFNam1, OK)
+     +           NLines(1), LRecL(1), InFNam1, SkipErr, OK)
       close(10)
       close(11)
       if (.not.OK) then
@@ -685,7 +712,8 @@ c
      +           RAstr2, Decstr2, IA1(2), IA2(2), ID1(2), ID2(2),
      +           RAmax(2), RAmin(2), Decmax(2), Decmin(2), nColTyp(2),
      +           Field2, IF2a, IF2b, NF2, ColTyp3(2), ColTyp4(2),
-     +           NLines(2), LRecL(2), InFNam2, OK)
+     +           NLines(2), LRecL(2), InFNam2, SkipErr, OK)
+      ColNam(3) = ColNam(2)
       close(12)
       close(13)
       if (.not.OK) go to 3009
@@ -777,7 +805,7 @@ c
         NB1 = (1 + NInt(sqrt(1.0 + 4.0*float(IC2(1)-IC1(1)))))/2 ! No. bands
 c
         M = 0
-        do 98 N = 1, NF2
+        do 97 N = 1, NF2
           if (Field2(N) .eq. SrcID) then
             IS1(2) = IF2a(N)
             IS2(2) = IF2b(N)
@@ -802,7 +830,7 @@ c
             ISr1(M) = IF2a(N)
             ISr2(M) = IF2b(N)
           end if
-98      continue
+97      continue
         if (IS1(2) .le. 0) then
           print *,'ERROR: can''t find '//SrcID//' in header line:'
           print *,ColNam(2)(1:LNBlnk(ColNam(2)))
@@ -833,6 +861,32 @@ c
         end if
         IF1 = IS1(1) + IF2 - IS1(2)
         go to 100
+      end if ! if (BmgColl8)
+c      
+c                                      ! must be mdex files in same format,
+      if (CatWISE) then                ! hence NF1=NF2, mdetID in same column
+        do 98 N = 1, NF1
+          if (Field1(N) .eq. 'mdetID') then
+            IM1(1) = IF1a(N)
+            IM2(1) = IF1b(N)
+          end if
+98      continue
+        if (IM1(1) .le. 0) then
+          print *,'ERROR: can''t find "mdetID" in header line:'
+          print *,ColNam(1)(1:LNBlnk(ColNam(1)))
+          go to 3009
+        end if
+        do 99 N = 1, NF2
+          if (Field2(N) .eq. 'mdetID') then
+            IM1(2) = IF2a(N)
+            IM2(2) = IF2b(N)
+          end if
+99      continue
+        if (IM1(2) .le. 0) then
+          print *,'ERROR: can''t find "mdetID" in header line:'
+          print *,ColNam(2)(1:LNBlnk(ColNam(2)))
+          go to 3009
+        end if
       end if
 c
       If (NLines(1) .gt. NLines(2)) then
@@ -866,9 +920,15 @@ c
       do 105 N = 1, NLines(1)
         read(11, rec=N, err = 3002) (Chr(L), L = 1, LRecl(1))
         if (DecOrder) then
-          read (Line(ID1(1):ID2(1)), *, err = 3006) Coord1(N)
+          read (Line(ID1(1):ID2(1)), *, err = 101) Coord1(N)
+          go to 105
+101       if (.not.SkipErr) go to 3006
+          Coord1(N) = 9.9e9            ! set aside, reject later
         else
-          read (Line(IA1(1):IA2(1)), *, err = 3003) Coord1(N)
+          read (Line(IA1(1):IA2(1)), *, err = 102) Coord1(N)
+          go to 105
+102       if (.not.SkipErr) go to 3003
+          Coord1(N) = 9.9e9            ! set aside, reject later
         end if
 105   continue
       Call TJISort(NLines(1),Coord1,Indx1) ! Gen. index array for
@@ -877,9 +937,15 @@ c
       do 110 N = 1, NLines(2)
         read(13, rec=N, err = 3004) (Chr(L), L = 1, LRecl(2))
         if (DecOrder) then
-          read (Line(ID1(2):ID2(2)), *, err = 3007) Coord2(N)
+          read (Line(ID1(2):ID2(2)), *, err = 106) Coord2(N)
+          go to 110
+106       if (.not.SkipErr) go to 3007
+          Coord2(N) = 9.9e9            ! set aside, reject later
         else
-          read (Line(IA1(2):IA2(2)), *, err = 3005) Coord2(N)
+          read (Line(IA1(2):IA2(2)), *, err = 107) Coord2(N)
+          go to 110
+107       if (.not.SkipErr) go to 3005
+          Coord2(N) = 9.9e9            ! set aside, reject later
         end if
 110   continue
       Call TJISort(NLines(2),Coord2,Indx2) ! Gen. index array for
@@ -908,7 +974,7 @@ c
         LenOut = LRecl(1)+LRecl(2)+9
         go to 200                          ! Neither file is table fmt
       end if
-      write(14,'(A58)') '\\ Generated by gsa vsn '//vsn//' on '
+      write(14,'(A58)') '\ Generated by gsa vsn '//vsn//' on '
      +                   //CDate//' at '//CTime
       write (14, 6001)
       call MakeFmt(FmtLine,LNBlnk(InFNam1))
@@ -1224,6 +1290,7 @@ c
         LenOut = Len1 + IPA2 - IPa1 + IPb2 - IPb1 + 2
         go to 200
       end if
+c
       call MakeFmt(FmtLine,LNBlnk(ColNam(1))+LNBlnk(ColNam(2))+8)
       write (14, FmtLine) ColNam(1)(1:LNBlnk(ColNam(1)))//Line1(1:8)
      +                  //ColNam(2)(1:LNBlnk(ColNam(2)))
@@ -1332,9 +1399,18 @@ c                                             ! get file vectors
           Z1(N) = 0.0
           go to 250
         end if
-        read (Line(IA1(1):IA2(1)), *, err = 3003) Alpha
-        read (Line(ID1(1):ID2(1)), *, err = 3006) Delta
-        cosD =  dcos(d2r*Delta)
+        read (Line(IA1(1):IA2(1)), *, err = 241) Alpha
+        go to 242
+241     if (.not.SkipErr) go to 3003
+        go to 244       
+242     read (Line(ID1(1):ID2(1)), *, err = 243) Delta
+        go to 246
+243     if (.not.SkipErr) go to 3006
+244     X1(N) = 0.0d0
+        Y1(N) = 0.0d0
+        Z1(N) = 0.0d0
+        go to 250 
+246     cosD  =  dcos(d2r*Delta)
         X1(N) =  dsin(d2r*Delta)
         Y1(N) = -cosD*dsin(d2r*Alpha)
         Z1(N) =  cosD*dcos(d2r*Alpha)
@@ -1349,9 +1425,18 @@ c
           Z2(N) = 0.0
           go to 255
         end if
-        read (Line(IA1(2):IA2(2)), *, err = 3005) Alpha
-        read (Line(ID1(2):ID2(2)), *, err = 3007) Delta
-        Alpha = Alpha - dRA
+        read (Line(IA1(2):IA2(2)), *, err = 251) Alpha
+        go to 252
+251     if (.not.SkipErr) go to 3005
+        go to 254       
+252     read (Line(ID1(2):ID2(2)), *, err = 253) Delta
+        go to 256
+253     if (.not.SkipErr) go to 3007
+254     X2(N) = 1.0d0
+        Y2(N) = 1.0d0
+        Z2(N) = 1.0d0
+        go to 255 
+256     Alpha = Alpha - dRA
         Delta = Delta - dDec
         cosD =  dcos(d2r*Delta)
         X2(N) =  dsin(d2r*Delta)      - dX
@@ -1365,7 +1450,7 @@ c                                              ! set up reject files
 265   if (Reject1) then
         open (15, File = Rej1Nam)
         if (TblFil(1)) then
-          write(15,'(A58)') '\\ Generated by gsa vsn '//vsn//' on '
+          write(15,'(A58)') '\ Generated by gsa vsn '//vsn//' on '
      +                       //CDate//' at '//CTime
           write (15, 6004)
           call MakeFmt(FmtLine,LNBlnk(InFNam1))
@@ -1385,13 +1470,13 @@ c
       if (Reject2) then
         open (16, File = Rej2Nam)
         if (TblFil(2)) then
-          write(16,'(A58)') '\\ Generated by gsa vsn '//vsn//' on '
+          write(16,'(A58)') '\ Generated by gsa vsn '//vsn//' on '
      +                       //CDate//' at '//CTime
           write (16, 6004)
           call MakeFmt(FmtLine,LNBlnk(InFNam2))
           write (16, FmtLine) InFNam2(1:LNBlnk(InFNam2))
-          call MakeFmt(FmtLine,LNBlnk(ColNam(2)))
-          write (16, FmtLine) ColNam(2)(1:LNBlnk(ColNam(2)))
+          call MakeFmt(FmtLine,LNBlnk(ColNam(3)))
+          write (16, FmtLine) ColNam(3)(1:LNBlnk(ColNam(3)))
           if (nColTyp(2) .gt. 1)
      +    write (16, FmtLine) ColTyp(2)(1:LNBlnk(ColTyp(2)))
           if (nColTyp(2) .gt. 2)
@@ -1440,10 +1525,12 @@ c                                              ! do the associating
 c
       do 400 N = 1, NLines(1)
         N1 = Indx1(N)
+        if (SkipErr .and. (X1(N1)+Y1(N1)+Z1(N1) .eq. 0.0d0)) go to 400
         read(11, rec=N1, err = 3002) (Chr(L), L = 1, LRecl(1))
         Line1 = Line(1:LRecl(1))//'                                    '
         read (Line1(IA1(1):IA2(1)), *, err = 3003) Alpha1
         read (Line1(ID1(1):ID2(1)), *, err = 3006) Delta1
+        if (CatWISE) read (Line1(IM1(1):IM2(1)), *, err = 3013) mdetID1
         AngMin = 9.9e9
         N2best = 0
         GotMatch = .False.
@@ -1468,14 +1555,19 @@ c
      +               + (X1(N1)*Y2(N2) - X2(N2)*Y1(N1))**2)
           Ang = dasin(Cross)
           if (Ang .gt. Dist) go to 360
-          if (.not.AllAssn) then           ! This match is acceptable on
-            if (Best2Come(X1,Y1,Z1,        !  the basis of position; if
-     +          X2,Y2,Z2,Indx1,N2,Window,  !  single best-match only, check
-     +          NLines,N,ADist,Ang,        !  whether a downstream primary
-     +          Coord1,Coord2))            !  matches the secondary better
+          if (.not.(AllAssn.or.CatWISE)) then ! This match is acceptable on
+            if (Best2Come(X1,Y1,Z1,           !  the basis of position; if
+     +          X2,Y2,Z2,Indx1,N2,Window,     !  single best-match only, check
+     +          NLines,N,ADist,Ang,           !  whether a downstream primary
+     +          Coord1,Coord2))               !  matches the secondary better
      +      go to 360
           end if
-330       if (GotMatch) N1multi = N1multi + 1
+330       if (CatWISE) then
+            read (13, rec=N2, err = 3004) (Chr(L), L = 1, LRecl(2))
+            read (Line(IM1(2):IM2(2)), *, err = 3014) mdetID2
+            if (mdetID1 .ne. mdetID2) go to 360
+          end if
+          if (GotMatch) N1multi = N1multi + 1
           GotMatch = .True.
           if (MState(N2) .eq. 3) N2multi = N2multi + 1
           if (AllAssn) then                ! output all associations as we go
@@ -1806,7 +1898,7 @@ c
 c
       if (GotStat) then
         open (20, file = StatNam)
-        write(20,'(A58)') '\\ Generated by gsa vsn '//vsn//' on '
+        write(20,'(A58)') '\ Generated by gsa vsn '//vsn//' on '
      +                     //CDate//' at '//CTime
         OutStr = '| mnradd | stdradd|  mnra  |  stdra |  mndec '
      +         //'| stddec |Nassns|'
@@ -1856,8 +1948,8 @@ c
         else
           M = NBands
         end if
-        write(18,'(''\\INT NBands = '',I2)') M
-        write(18,'(''\\INT Total_Merged_Number ='',I7)') NTotal
+        write(18,'(''\INT NBands = '',I2)') M
+        write(18,'(''\INT Total_Merged_Number ='',I7)') NTotal
         close(18)
         ISys = System('cat '//TmpNam(3)//' '//BmgNam//' > '//OutFNam)
         ISys = System('rm '//BmgNam)
@@ -1913,6 +2005,14 @@ c
 c
 3012  print *,'ERROR decoding srcid in file #2, record ', N
       print *,Line(ID1(1):ID2(1))
+      go to 3009
+c
+3013  print *,'ERROR decoding mdetID in file #1, record ', N
+      print *,Line(IM1(1):IM2(1))
+      go to 3009
+c
+3014  print *,'ERROR decoding mdetID in file #2, record ', N
+      print *,Line(IM1(2):IM2(2))
       go to 3009
 c
 c-----------------------------------------------------------------------
