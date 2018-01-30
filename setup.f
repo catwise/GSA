@@ -2,7 +2,7 @@
      +                 RAstr, Decstr, IA1, IA2, ID1, ID2,
      +                 RAmax, RAmin, Decmax, Decmin, nColTyp,
      +                 Field, IFa, IFb, NF, ColTyp3, ColTyp4,
-     +                 NLines, LRecL, FilNam, OK)
+     +                 NLines, LRecL, FilNam, SkipErr, OK)
 c-----------------------------------------------------------------------
 c
 c  Set up an input file for gsa; read file on IUnitIn, write a direct-
@@ -23,7 +23,7 @@ c
       integer*4      IUnitIn, IUnitOut, NLines, LRecL, IA1, IA2, ID1,
      +               ID2, LNBlnk, MaxLen, NTblHdr, N, IFa(MaxFld),
      +               IFb(MaxFld), NF, nColTyp
-      Logical        TblFil, OK, GotCN, GotCT
+      Logical        TblFil, OK, GotCN, GotCT, SkipErr
       Byte           IChr
       Equivalence   (Chr, IChr)
 c
@@ -144,11 +144,15 @@ c
       do 500 N = 1, NLines
          read(IUnitIn, '(A5000)', end = 3005, err = 3006) Line
          write(IUnitOut,FmtLine) Line(1:MaxLen)
-         read (Line(IA1:IA2), *, err = 3007) RTmp
-         if (RTmp .lt. RAmin) RAmin = RTmp
+         read (Line(IA1:IA2), *, err = 420) RTmp
+         go to 430
+420      if (.not.SkipErr) go to 3007         
+430      if (RTmp .lt. RAmin) RAmin = RTmp
          if (RTmp .gt. RAmax) RAmax = RTmp
-         read (Line(ID1:ID2), *, err = 3007) RTmp
-         if (RTmp .lt. Decmin) Decmin = RTmp
+         read (Line(ID1:ID2), *, err = 440) RTmp
+         go to 450
+440      if (.not.SkipErr) go to 3008         
+450      if (RTmp .lt. Decmin) Decmin = RTmp
          if (RTmp .gt. Decmax) Decmax = RTmp
 500   continue
       return
