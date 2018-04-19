@@ -33,6 +33,7 @@ c          2.8  B80125: installed CatWISE-specific requirement to match
 c                       mdetID in addition to meet radial-distance rqmt
 c          2.8  B80128: installed option to skip nulls in match fields,
 c                       i.e., treat as not matched
+c          2.8  B80419: added spec for temporary work directory name
 c
 c-----------------------------------------------------------------------
 c
@@ -41,9 +42,9 @@ c
 c
       Character*5000 Line, ColNam(3), ColTyp(2), Line1, Null1, Null2,
      +               ColTyp3(2), ColTyp4(2)
-      Character*250  InFNam1, InFNam2, OutFNam, FilNam, Rej1Nam,
-     +               Rej2Nam, StatNam
-      Character*100  TmpNam(3), BmgNam
+      Character*500  InFNam1, InFNam2, OutFNam, FilNam, Rej1Nam,
+     +               Rej2Nam, StatNam, TempDir
+      Character*500  TmpNam(3), BmgNam
       Character*64   OutStr, TmpStr
       Character*25   NumStr, RAstr1, RAstr2, Decstr1, Decstr2,
      +               Field1(MaxFld), Field2(MaxFld), NamDes, NamGot
@@ -87,7 +88,7 @@ c
 c
       Common / VDT / CDate, CTime, Vsn
 c
-      data Vsn/'2.8  B80128'/, NeedHelp/.False./, GotIn1/.False./,
+      data Vsn/'2.8  B80419'/, NeedHelp/.False./, GotIn1/.False./,
      +     GotIn2/.False./, GotA1/.False./, GotA2/.False./, IH2/60/,
      +     GotOut/.False./, GotD1/.False./, GotD2/.False./, NLines/2*0/,
      +     GotRD/.False./,AllSrc1/.True./, AllAssn/.True./, N1single/0/,
@@ -105,7 +106,7 @@ c
      +     IC1/-9,-9/, NAssns/0/, N2single/0/, BmgHed/.False./,
      +     IF2/0/, IPa1/0/, IPa2/0/, IPb1/0/, IPb2/0/, NB1/1/,
      +     GotStat/.false./, CatWISE/.false./, IM1,Im2/4*-9/,
-     +     SkipErr/.false./
+     +     SkipErr/.false./, TempDir/'./'/
 c
 c-----------------------------------------------------------------------
 c
@@ -208,6 +209,8 @@ c
      +'    -se             (optional; skip read errors on match fields;'
         print *,
      +'                     treat as unmatchable source)'
+        print *,
+     +'    -td  tmpdir     (optional; temporary scratch directory name)'
         print *
         print *,
      +  'For general source association, the first eight specifications'
@@ -617,6 +620,12 @@ c
       Else If (Flag .eq. '-se') then
         SkipErr = .true.
 c
+      Else if (Flag .eq. '-td') then
+        NArg = NArg + 1
+        call GetArg(NArg,TempDir)
+        k = lnblnk(TempDir)
+        if (TempDir(k:k) .ne. '/') TempDir(k+1:k+1) = '/'
+c
       Else
         print *,'Unrecognized flag: ',Flag
         NeedHelp = .True.
@@ -658,7 +667,7 @@ c
 c-----------------------------------------------------------------------
 c
 90    Open (10, File = InFNam1)
-	  call GetTmpNam(TmpNam(1),OK)
+	  call GetTmpNam(TmpNam(1),TempDir,OK)
       if (.not.OK) then
 	    print *,'Unable to create temporary work file no. 1'
         call exit(64)
@@ -701,7 +710,7 @@ c
       end if
 c
 94    Open (12, File = InFNam2)
-	  call GetTmpNam(TmpNam(2),OK)
+	  call GetTmpNam(TmpNam(2),TempDir,OK)
       if (.not.OK) then
 	    print *,'Unable to create temporary work file no. 2'
         call DelTmp(TmpNam(1))
@@ -958,7 +967,7 @@ c
       if (.not.MergOut) go to 240
 c
       if (BmgColl8 .or. BmgHed) then
-	    call GetTmpNam(BmgNam,OK)
+	    call GetTmpNam(BmgNam,TempDir,OK)
         if (.not.OK) then
 	      print *,'Unable to create temporary work file Bandmerge'
           call DelTmp(TmpNam(1))
@@ -1937,7 +1946,7 @@ c
 c
 2000  print *
       if (BmgColl8 .or. BmgHed) then
-	  call GetTmpNam(TmpNam(3),OK)
+	  call GetTmpNam(TmpNam(3),TempDir,OK)
       if (.not.OK) then
 	    print *,'Unable to create temporary work file no. 3'
         call exit(64)
@@ -2036,7 +2045,7 @@ c=======================================================================
 c
       subroutine DelTmp(TmpNam)
 c
-      Character*100 TmpNam
+      Character*500 TmpNam
       Integer*4 System, ISys
 c
 c-----------------------------------------------------------------------
@@ -2241,14 +2250,14 @@ c
 c
 c=======================================================================
 c
-      subroutine GetTmpNam(TmpNam,OK)
+      subroutine GetTmpNam(TmpNam, TempDir, OK)
 c      
-      character*100 TmpNam0, TmpNam, WrkStrg
+      character*500 TmpNam0, TmpNam, WrkStrg, TempDir
       Character*11  Vsn
       Character*8   CDate, CTime
       integer*4     nTries, idum, k, lnblnk, Access, nCall
       real*4        ran1
-      logical       OK  
+      logical*4     OK, dbg
       data          nCall/0/
 c      
       Common / VDT / CDate, CTime, Vsn
@@ -2284,9 +2293,9 @@ c
         WrkStrg(k:k) = '%'
         go to 30
       end if      
-      TmpNam = TmpNam0(1:lnblnk(TmpNam0))//WrkStrg(1:lnblnk(WrkStrg))
+      TmpNam = TempDir(1:lnblnk(TempDir))//TmpNam0(1:lnblnk(TmpNam0))
+     +         //WrkStrg(1:lnblnk(WrkStrg))
       if (Access(TmpNam(1:lnblnk(TmpNam)),' ') .eq. 0) go to 10
-c     print *,'returning file name: |'//TmpNam(1:lnblnk(TmpNam))//'|' !dbg
       return
       end
 c
