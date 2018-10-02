@@ -34,6 +34,7 @@ c                       mdetID in addition to meet radial-distance rqmt
 c          2.8  B80128: installed option to skip nulls in match fields,
 c                       i.e., treat as not matched
 c          2.8  B80419: added spec for temporary work directory name
+c          2.8  B81002: added "-nm2" option: no multi-matches in file 2
 c
 c-----------------------------------------------------------------------
 c
@@ -82,13 +83,13 @@ c
      +               GotD1, GotD2, TblFil(2), GotRD, AllSrc1, AllAssn,
      +               OK, DecOrder, GotMatch, AllSrc2, Reject1, Reject2,
      +               MergOut, IndxOut, BmgColl8, Best2Come, BmgHed,
-     +               GotStat, CatWISE, SkipErr
+     +               GotStat, CatWISE, SkipErr, nm2
 c
       Equivalence   (Line, Chr(1))
 c
       Common / VDT / CDate, CTime, Vsn
 c
-      data Vsn/'2.8  B80419'/, NeedHelp/.False./, GotIn1/.False./,
+      data Vsn/'2.8  B81002'/, NeedHelp/.False./, GotIn1/.False./,
      +     GotIn2/.False./, GotA1/.False./, GotA2/.False./, IH2/60/,
      +     GotOut/.False./, GotD1/.False./, GotD2/.False./, NLines/2*0/,
      +     GotRD/.False./,AllSrc1/.True./, AllAssn/.True./, N1single/0/,
@@ -106,7 +107,7 @@ c
      +     IC1/-9,-9/, NAssns/0/, N2single/0/, BmgHed/.False./,
      +     IF2/0/, IPa1/0/, IPa2/0/, IPb1/0/, IPb2/0/, NB1/1/,
      +     GotStat/.false./, CatWISE/.false./, IM1,Im2/4*-9/,
-     +     SkipErr/.false./, TempDir/'./'/
+     +     SkipErr/.false./, TempDir/'./'/, nm2/.false./
 c
 c-----------------------------------------------------------------------
 c
@@ -131,14 +132,6 @@ c
      +  '    -dec2 Decspec2  (Dec specification for second input file)'
         print *,
      +  '    -r AssnDist     (radial association distance, arcsec)'
-        print *,
-     +  '    -b band#        (band number for collating two bandmerged'
-        print *,
-     +  '                     files via srcid in the specified band)'
-        print *,
-     +  '    -bh #bands      (optional; include bandmerge header'
-        print *,
-     +  '                     keywords NBands and Total_Merged_Number)'
         print *,
      +  '    -a1             (optional; output only closest match)'
         print *,
@@ -204,8 +197,6 @@ c
         print *,
      +'                     appended)'
         print *,
-     +  '    -cw             (optional; CatWISE-specific processing)'
-        print *,
      +'    -se             (optional; skip read errors on match fields;'
         print *,
      +'                     treat as unmatchable source)'
@@ -236,13 +227,17 @@ c
         print *,
      +'at the last non-blank character.'
         print *
-c       print *,
-c    + 'Because gsa uses internally named temporary work files, more'
-c       print *,
-c    +'than one instance of gsa must not run simultaneously in the same'
-c       print *,
-c    +'working directory.'
-c       print *
+        Print *,'(Spitzer-specific)'
+        print *
+        print *,
+     +  '    -b band#        (band number for collating two bandmerged'
+        print *,
+     +  '                     files via srcid in the specified band)'
+        print *,
+     +  '    -bh #bands      (optional; include bandmerge header'
+        print *,
+     +  '                     keywords NBands and Total_Merged_Number)'
+        print *
         print *,
      + 'To collate two bandmerged files, the first three specifications'
         print *,
@@ -266,6 +261,13 @@ c       print *
         print *,
      +'certain utilities; it should not be used with the "-b" option.'
         print *
+        Print *,'(CatWISE-specific)'
+        print *
+        print *,
+     +  '    -cw             (optional; CatWISE-specific processing)'
+        print *,
+     +  '    -nm2            (optional; no multi-matches in file #2)'
+        print *
         print *,
      +  'For CatWISE-specific processing ("-cw"), the first eight'
         print *,
@@ -274,6 +276,10 @@ c       print *
      +  'specified with the "-t" flag; in addition to the usual radial-'
         print *,
      +  'distance requirement, the "mdetID" values must match.'
+        print *,
+     +  'If "-nm2" is specified, sources in the second input file may'
+        print *,
+     +  'match only the closest source in the first input file.'
         call exit(32)
       end if
 c
@@ -616,6 +622,9 @@ c
 c
       Else If (Flag .eq. '-cw') then
         CatWISE = .true.
+c
+      Else If (Flag .eq. '-nm2') then
+        nm2 = .true.
 c
       Else If (Flag .eq. '-se') then
         SkipErr = .true.
@@ -1872,6 +1881,21 @@ c
      + print *,'No. multi-matched in file 2: ',N2multi
       print *,'Total output data lines:     ',NTotal
       if (NAssns .eq. 0) go to 2000
+      if (nm2 .and. (N2Multi .gt. 0)) then
+1001    n = index(InFNam2,'/')
+        if (n .gt. 0) then
+          do 1002 i = 1, n
+          InFNam2(i:i) = ' '
+1002      continue
+          go to 1001
+        end if
+        InFNam2 = AdjustL(InFNam2)
+        open (33, file = 'ERROR_MESSAGE_gsa-'
+     +                  //InFNam2(1:lnblnk(InFNam2))//'.txt')
+        write (33,'(a)')
+     +  'ERROR: "-nm2" was specified, but there were multi-matches in'
+        write (33,'(a,i9)') 'file #2; no. multi-matches =',N2multi
+      end if
 c
       if (BmgColl8) go to 2000
       print *
