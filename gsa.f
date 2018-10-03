@@ -884,24 +884,46 @@ c
 c                                      ! must be mdex files in same format,
       if (CatWISE) then                ! hence NF1=NF2, mdetID in same column
         do 98 N = 1, NF1
-          if (Field1(N) .eq. 'mdetID') then
-            IM1(1) = IF1a(N)
-            IM2(1) = IF1b(N)
+          if (nm2) then
+            if (Field1(N) .eq. 'src') then
+              IM1(1) = IF1a(N)
+              IM2(1) = IF1b(N)
+            end if
+          else
+            if (Field1(N) .eq. 'mdetID') then
+              IM1(1) = IF1a(N)
+              IM2(1) = IF1b(N)
+            end if          
           end if
 98      continue
         if (IM1(1) .le. 0) then
-          print *,'ERROR: can''t find "mdetID" in header line:'
+          if (nm2) then
+            print *,'ERROR: can''t find "src" in file 1 header line:'
+          else
+            print *,'ERROR: can''t find "mdetID" in header line:'
+          end if
           print *,ColNam(1)(1:LNBlnk(ColNam(1)))
           go to 3009
         end if
         do 99 N = 1, NF2
-          if (Field2(N) .eq. 'mdetID') then
-            IM1(2) = IF2a(N)
-            IM2(2) = IF2b(N)
+          if (nm2) then
+            if (Field2(N) .eq. 'src') then
+              IM1(2) = IF2a(N)
+              IM2(2) = IF2b(N)
+            end if
+          else
+            if (Field2(N) .eq. 'mdetID') then
+              IM1(2) = IF2a(N)
+              IM2(2) = IF2b(N)
+            end if
           end if
 99      continue
         if (IM1(2) .le. 0) then
-          print *,'ERROR: can''t find "mdetID" in header line:'
+          if (nm2) then
+            print *,'ERROR: can''t find "src" in file 2 header line:'
+          else
+            print *,'ERROR: can''t find "mdetID" in header line:'
+          end if
           print *,ColNam(2)(1:LNBlnk(ColNam(2)))
           go to 3009
         end if
