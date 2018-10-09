@@ -35,6 +35,8 @@ c          2.8  B80128: installed option to skip nulls in match fields,
 c                       i.e., treat as not matched
 c          2.8  B80419: added spec for temporary work directory name
 c          2.8  B81002: added "-nm2" option: no multi-matches in file 2
+c          2.9  B81009: added OutFNam into scratch file names to reduce
+c                       probability of name collisions
 c
 c-----------------------------------------------------------------------
 c
@@ -89,7 +91,7 @@ c
 c
       Common / VDT / CDate, CTime, Vsn
 c
-      data Vsn/'2.8  B81002'/, NeedHelp/.False./, GotIn1/.False./,
+      data Vsn/'2.9  B81009'/, NeedHelp/.False./, GotIn1/.False./,
      +     GotIn2/.False./, GotA1/.False./, GotA2/.False./, IH2/60/,
      +     GotOut/.False./, GotD1/.False./, GotD2/.False./, NLines/2*0/,
      +     GotRD/.False./,AllSrc1/.True./, AllAssn/.True./, N1single/0/,
@@ -676,7 +678,7 @@ c
 c-----------------------------------------------------------------------
 c
 90    Open (10, File = InFNam1)
-	  call GetTmpNam(TmpNam(1),TempDir,OK)
+	  call GetTmpNam(TmpNam(1),TempDir,OutFNam,OK)
       if (.not.OK) then
 	    print *,'Unable to create temporary work file no. 1'
         call exit(64)
@@ -719,7 +721,7 @@ c
       end if
 c
 94    Open (12, File = InFNam2)
-	  call GetTmpNam(TmpNam(2),TempDir,OK)
+	  call GetTmpNam(TmpNam(2),TempDir,OutFNam,OK)
       if (.not.OK) then
 	    print *,'Unable to create temporary work file no. 2'
         call DelTmp(TmpNam(1))
@@ -998,7 +1000,7 @@ c
       if (.not.MergOut) go to 240
 c
       if (BmgColl8 .or. BmgHed) then
-	    call GetTmpNam(BmgNam,TempDir,OK)
+	    call GetTmpNam(BmgNam,TempDir,OutFNam,OK)
         if (.not.OK) then
 	      print *,'Unable to create temporary work file Bandmerge'
           call DelTmp(TmpNam(1))
@@ -1992,7 +1994,7 @@ c
 c
 2000  print *
       if (BmgColl8 .or. BmgHed) then
-	  call GetTmpNam(TmpNam(3),TempDir,OK)
+	  call GetTmpNam(TmpNam(3),TempDir,OutFNam,OK)
       if (.not.OK) then
 	    print *,'Unable to create temporary work file no. 3'
         call exit(64)
@@ -2296,12 +2298,12 @@ c
 c
 c=======================================================================
 c
-      subroutine GetTmpNam(TmpNam, TempDir, OK)
+      subroutine GetTmpNam(TmpNam, TempDir,OutFNam, OK)
 c      
-      character*500 TmpNam0, TmpNam, WrkStrg, TempDir
+      character*500 TmpNam0, TmpNam, WrkStrg, TempDir, OutFNam
       Character*11  Vsn
       Character*8   CDate, CTime
-      integer*4     nTries, idum, k, lnblnk, Access, nCall
+      integer*4     nTries, idum, k, lnblnk, Access, nCall, n
       real*4        ran1
       logical*4     OK, dbg
       data          nCall/0/
@@ -2314,8 +2316,21 @@ c
         nCall = nCall + 1
       end if
       TmpNam0 = TmpNam
+      TmpNam  = OutFNam
       OK      = .true.
       nTries  = 0
+c
+1     n = index(TmpNam,'/')
+c1    n = index(TmpNam,'\')        ! for DOS version
+      if (n .gt. 0) then
+        do 2 k = 1, n
+          TmpNam(k:k) = ' '
+2       continue
+        go to 1
+      end if
+      TmpNam  = AdjustL(TmpNam)
+      TmpNam0 = TmpNam0(1:lnblnk(TmpNam0))//TmpNam
+c     print *,'TmpNam0: ',tmpnam0(1:lnblnk(tmpnam0))   ! debug
 c
 10    nTries = nTries + 1
       if (nTries .gt. 999) then
@@ -2342,6 +2357,7 @@ c
       TmpNam = TempDir(1:lnblnk(TempDir))//TmpNam0(1:lnblnk(TmpNam0))
      +         //WrkStrg(1:lnblnk(WrkStrg))
       if (Access(TmpNam(1:lnblnk(TmpNam)),' ') .eq. 0) go to 10
+c     print *,TmpNam(1:lnblnk(TmpNam))     ! debug
       return
       end
 c
