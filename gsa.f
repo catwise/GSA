@@ -37,6 +37,9 @@ c          2.8  B80419: added spec for temporary work directory name
 c          2.8  B81002: added "-nm2" option: no multi-matches in file 2
 c          2.9  B81009: added OutFNam into scratch file names to reduce
 c                       probability of name collisions
+c          2.91 B81012: added debug trace for specific mdetID values
+c                       (see gsa-dbg261.f and best2cm-dbg261.f)
+c          2.92 B81014: added "Best2Come" processing in mdetID mode
 c
 c-----------------------------------------------------------------------
 c
@@ -91,7 +94,7 @@ c
 c
       Common / VDT / CDate, CTime, Vsn
 c
-      data Vsn/'2.9  B81009'/, NeedHelp/.False./, GotIn1/.False./,
+      data Vsn/'2.92 B81014'/, NeedHelp/.False./, GotIn1/.False./,
      +     GotIn2/.False./, GotA1/.False./, GotA2/.False./, IH2/60/,
      +     GotOut/.False./, GotD1/.False./, GotD2/.False./, NLines/2*0/,
      +     GotRD/.False./,AllSrc1/.True./, AllAssn/.True./, N1single/0/,
@@ -1597,19 +1600,21 @@ c
      +               + (X1(N1)*Y2(N2) - X2(N2)*Y1(N1))**2)
           Ang = dasin(Cross)
           if (Ang .gt. Dist) go to 360
-          if (.not.(AllAssn.or.CatWISE)) then ! This match is acceptable on
-            if (Best2Come(X1,Y1,Z1,           !  the basis of position; if
-     +          X2,Y2,Z2,Indx1,N2,Window,     !  single best-match only, check
-     +          NLines,N,ADist,Ang,           !  whether a downstream primary
-     +          Coord1,Coord2))               !  matches the secondary better
-     +      go to 360
-          end if
-330       if (CatWISE) then
+          if (CatWISE) then
             read (13, rec=N2, err = 3004) (Chr(L), L = 1, LRecl(2))
             read (Line(IM1(2):IM2(2)), *, err = 3014) mdetID2
             if (mdetID1 .ne. mdetID2) go to 360
           end if
-          if (GotMatch) N1multi = N1multi + 1
+          if (.not.AllAssn) then              ! This match is acceptable on
+            if (Best2Come(X1,Y1,Z1,           !  the basis of position; if
+     +          X2,Y2,Z2,Indx1,N2,Window,     !  single best-match only, check
+     +          NLines,N,ADist,Ang,           !  whether a downstream primary
+     +          mdetID2,CatWISE,LRecL(1),     !  matches the secondary better
+     +          IM1(1),IM2(1),
+     +          Coord1,Coord2))
+     +      go to 360
+          end if
+330       if (GotMatch) N1multi = N1multi + 1
           GotMatch = .True.
           if (MState(N2) .eq. 3) N2multi = N2multi + 1
           if (AllAssn) then                ! output all associations as we go
@@ -2305,7 +2310,7 @@ c
       Character*8   CDate, CTime
       integer*4     nTries, idum, k, lnblnk, Access, nCall, n
       real*4        ran1
-      logical*4     OK, dbg
+      logical*4     OK
       data          nCall/0/
 c      
       Common / VDT / CDate, CTime, Vsn
@@ -2320,14 +2325,14 @@ c
       OK      = .true.
       nTries  = 0
 c
-1     n = index(TmpNam,'/')
-c1    n = index(TmpNam,'\')        ! for DOS version
-      if (n .gt. 0) then
-        do 2 k = 1, n
-          TmpNam(k:k) = ' '
-2       continue
-        go to 1
-      end if
+c1    n = index(TmpNam,'/')        ! for linux version
+1     n = index(TmpNam,'\')        ! for DOS version
+      if (n .gt. 0) then           !
+        do 2 k = 1, n              ! NOTE: there is still a loophole:
+          TmpNam(k:k) = ' '        !       if two runs start simultaneously
+2       continue                   !       in the same working/tempdir directory
+        go to 1                    !       directory with output files named the
+      end if                       !       the same but with different paths
       TmpNam  = AdjustL(TmpNam)
       TmpNam0 = TmpNam0(1:lnblnk(TmpNam0))//TmpNam
 c     print *,'TmpNam0: ',tmpnam0(1:lnblnk(tmpnam0))   ! debug
