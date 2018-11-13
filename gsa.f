@@ -2325,8 +2325,8 @@ c
       OK      = .true.
       nTries  = 0
 c
-c1    n = index(TmpNam,'/')        ! for linux version
-1     n = index(TmpNam,'\')        ! for DOS version
+1     n = index(TmpNam,'/')        ! for linux version
+c1    n = index(TmpNam,'\')        ! for DOS version
       if (n .gt. 0) then           !
         do 2 k = 1, n              ! NOTE: there is still a loophole:
           TmpNam(k:k) = ' '        !       if two runs start simultaneously
