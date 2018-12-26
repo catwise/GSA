@@ -40,6 +40,18 @@ c                       probability of name collisions
 c          2.91 B81012: added debug trace for specific mdetID values
 c                       (see gsa-dbg261.f and best2cm-dbg261.f)
 c          2.92 B81014: added "Best2Come" processing in mdetID mode
+c          2.93 B81220: force Dec order when abs(DeltaRA) > 350, i.e.,
+c                       indicating an RA 0-360 crossing, which makes
+c                       RA order incorrectly assume no matches across
+c                       RA boundary, hence need Dec order.
+c          2.94 B81224: force Dec order when CatWISE = T; also extend
+c                       search from 1.1*Dist to 1.5*Dist; change all
+c                       reals to real*8 except in random-number gen.
+c          2.95 B81224: restored forcing Dec order when CatWISE = T;
+c                       added prints on RA/Dec min/max
+c
+c NOTE: when redelivering the linux version, be sure to set the path
+c       switch from "\" to "/" (search on "linux" to find the code)
 c
 c-----------------------------------------------------------------------
 c
@@ -60,7 +72,7 @@ c
       Character*7    SrcID
       Character*5    Flag
       Character*1    Chr(5000)
-      Real*4         RAmax(2), RAmin(2), Decmax(2), Decmin(2),
+      Real*8         RAmax(2), RAmin(2), Decmax(2), Decmin(2),
      +               AvgDec, DeltRA, DeltDec, Window, RTmp1, RTmp2,
      +               RTmp3, RTmp4, RTmp5, RTmp6, ran1
       Real*8         d2r, Alpha, Delta, cosD, Ang, AngMin,
@@ -81,7 +93,7 @@ c
      +               mdetID1, mdetID2, IM1(2), IM2(2)
 c
       Real*8, allocatable :: X1(:), Y1(:), Z1(:), X2(:), Y2(:), Z2(:)
-      Real*4, allocatable :: Coord1(:), Coord2(:)
+      Real*8, allocatable :: Coord1(:), Coord2(:)
       Integer*4, allocatable :: Indx1(:), Indx2(:)
       Byte, allocatable ::   Mstate(:)
       Logical        NeedHelp, GotIn1, GotIn2, GotOut, GotA1, GotA2,
@@ -94,7 +106,7 @@ c
 c
       Common / VDT / CDate, CTime, Vsn
 c
-      data Vsn/'2.92 B81014'/, NeedHelp/.False./, GotIn1/.False./,
+      data Vsn/'2.95 B81224'/, NeedHelp/.False./, GotIn1/.False./,
      +     GotIn2/.False./, GotA1/.False./, GotA2/.False./, IH2/60/,
      +     GotOut/.False./, GotD1/.False./, GotD2/.False./, NLines/2*0/,
      +     GotRD/.False./,AllSrc1/.True./, AllAssn/.True./, N1single/0/,
@@ -802,9 +814,12 @@ c
 c-----------------------------------------------------------------------
 c
       if (BmgColl8) then
-        DeltRA = RAmax(1) - RAmin(1)
+        DeltRA = (RAmax(1) - RAmin(1))
+     +          * cos(d2r*(DecMax(1)+DecMin(1))/2.0)
         DeltDec = Decmax(1) - Decmin(1)
         DecOrder = DeltDec .gt. DeltRA
+        DecOrder = DecOrder
+     +       .or. (DecMin(1) .lt. -80.0) .or. (DecMax(1) .gt. 80.0)
         do 96 N = 1, NF1
           if (Field1(N) .eq. SrcID) then
             IS1(1) = IF1a(N)
@@ -938,16 +953,24 @@ c
         AvgDec = 0.5*(Decmax(1) + Decmin(1))
         if (RAmin(1) .lt. 0.0) RAmin(1) = RAmin(1) + 360.0
         if (RAmax(1) .lt. 0.0) RAmax(1) = RAmax(1) + 360.0
-        DeltRA = cos(d2r*AvgDec)*abs(RAmax(1) - RAmin(1))
+        DeltRA = abs(RAmax(1) - RAmin(1))
         DeltDec = Decmax(1) - Decmin(1)
+c       print *,'RA min/max: ', RAmin(1), RAmax(1)
+c       print *,'Dec min/max:',Decmin(1), Decmax(1)
       else
         AvgDec = 0.5*(Decmax(2) + Decmin(2))
         if (RAmin(2) .lt. 0.0) RAmin(2) = RAmin(2) + 360.0
         if (RAmax(2) .lt. 0.0) RAmax(2) = RAmax(2) + 360.0
-        DeltRA = cos(d2r*AvgDec)*abs(RAmax(2) - RAmin(2))
+        DeltRA = abs(RAmax(2) - RAmin(2))
         DeltDec = Decmax(2) - Decmin(2)
+c       print *,'RA min/max: ', RAmin(1), RAmax(1)
+c       print *,'Dec min/max:',Decmin(1), Decmax(1)
       end if
-      DecOrder = DeltDec .gt. DeltRA
+c     print *,'RA delta (true angle):', cos(d2r*AvgDec)*DeltRA
+c     print *,'Dec delta:            ', DeltDec
+      DecOrder = DeltDec .gt. cos(d2r*AvgDec)*DeltRA
+      DecOrder = DecOrder .or. (DeltRA .gt. 350.0) .or. CatWISE
+c     DecOrder = DecOrder .or. (DeltRA .gt. 350.0)
       if (cos(d2r*AvgDec) .ne. 0.0) dRA = dRA/cos(d2r*AvgDec)
       if (DecOrder) then
         print *,'Output will be in ascending Dec order'
@@ -1541,7 +1564,7 @@ c
         ADist = Dist/3600.0           ! Dist in deg
         Dist  = d2r*Dist/3600.0d0     ! Convert Dist to radians
       end if
-      Window = 1.1*Dist               ! Coarse window slightly larger
+      Window = 1.5*Dist               ! Coarse window slightly larger
 c
 c                                     ! identify matchable
       do 320 M = 1, NLines(2)         ! file-2 sources
@@ -2089,10 +2112,8 @@ c-----------------------------------------------------------------------
 c
       End
 c
-      include 'setup.f'
       include 'gsagflds.f'
       include 'makenam.f'
-      include 'best2cm.f'
 c
 c=======================================================================
 c
@@ -2164,7 +2185,7 @@ c                                  from Numerical Recipes via T. Jarrett
       SUBROUTINE TJISORT(N,RA,ND)
 c
       Integer*4 N,L,IR,J,I,ND(N),NDA
-      Real*4 RA(N),RRA
+      Real*8 RA(N),RRA
 c
       if (n .lt. 1) return
       Do 5 I = 1, N
@@ -2395,3 +2416,299 @@ c
       ran1=min(AM*iy,RNMX)
       return
       END
+c
+c=======================================================================
+c
+      subroutine Setup(IUnitIn, IUnitOut, ColNam, ColTyp, TblFil,
+     +                 RAstr, Decstr, IA1, IA2, ID1, ID2,
+     +                 RAmax, RAmin, Decmax, Decmin, nColTyp,
+     +                 Field, IFa, IFb, NF, ColTyp3, ColTyp4,
+     +                 NLines, LRecL, FilNam, SkipErr, OK)
+c-----------------------------------------------------------------------
+c
+c  Set up an input file for gsa; read file on IUnitIn, write a direct-
+c  access file on IUnitOut; strip headers from table files after finding
+c  and saving the column names and column types and finding the RA and
+c  Dec column numbers; return the logical record length
+c
+c-----------------------------------------------------------------------
+                     Integer*4  MaxFld
+                     Parameter (MaxFld = 1000)
+c
+      character*5000 ColNam, ColTyp, Line, ColTyp3, ColTyp4
+      character*150  FilNam
+      character*25   RAstr, Decstr, Field(MaxFld)
+      character*11   FmtLine
+      character*1    Chr
+      real*8         RAmax, RAmin, Decmax, Decmin, RTmp
+      integer*4      IUnitIn, IUnitOut, NLines, LRecL, IA1, IA2, ID1,
+     +               ID2, LNBlnk, MaxLen, NTblHdr, N, IFa(MaxFld),
+     +               IFb(MaxFld), NF, nColTyp
+      Logical        TblFil, OK, GotCN, GotCT, SkipErr
+      Byte           IChr
+      Equivalence   (Chr, IChr)
+c
+c-----------------------------------------------------------------------
+c
+      OK = .True.
+      GotCN = .False.
+      GotCT = .False.
+      NTblHdr = 0
+      MaxLen = 0
+      NLines = 0
+      nColTyp = 0
+c
+      if (TblFil) then
+10      read (IUnitIn, '(A5000)', end = 3000, err = 3001) Line
+        NTblHdr = NTblHdr + 1
+c
+        if (Line(1:1) .eq. '|') then
+          nColTyp = nColTyp + 1
+          if (.not.GotCN) then
+            ColNam = Line
+            GotCN = .True.
+            if (ColNam(LNBlnk(ColNam):LNBlnk(ColNam)) .ne. '|') then
+              print *,
+     +         'WARNING: table-file header does not terminate with "|"'
+              print *,ColNam(1:LNBlnk(ColNam))
+              N = LNBlnk(ColNam) + 1
+              if (N .gt. 5000) N = 5000
+              ColNam(N:N) = '|'
+              print *,'modified to the following:'
+              print *,ColNam(1:LNBlnk(ColNam))
+            end if
+c
+            NF = 0
+            do 20 N = 1, LNBlnk(ColNam)-1
+              if (ColNam(N:N) .eq. '|') NF = NF + 1
+20          continue
+            if (NF .gt. MaxFld) then
+              print *,'WARNING: too many fields in table file: ',NF
+              print *,'         max = ',MaxFld
+              print *,'         file: ',FilNam(1:LNBlnk(FilNam))
+              print *,'         processing only the max value'
+              NF = MaxFld
+            end if
+c
+            call GetFlds(ColNam,Field,IFa,IFb,NF)
+c
+            do 40 N = 1, NF
+              if (Field(N) .eq. RAstr) then
+                IA1 = IFa(N)
+                IA2 = IFb(N)
+                go to 50
+              end if
+40          continue
+            print *,'ERROR: can''t find '//RAstr(1:LNBlnk(RAstr))
+     +              //' in header line:'
+            print *,Line(1:LNBlnk(Line))
+            OK = .False.
+            return
+c
+50          do 60 N = 1, NF
+              if (Field(N) .eq. Decstr) then
+                ID1 = IFa(N)
+                ID2 = IFb(N)
+                go to 100
+              end if
+60          continue
+            print *,'ERROR: can''t find '//Decstr(1:LNBlnk(Decstr))
+     +              //' in header line:'
+            print *,Line(1:LNBlnk(Line))
+            OK = .False.
+            return
+100         continue
+c
+          else if (.not.GotCT) then
+            ColTyp = Line
+            GotCT = .True.
+          else if (nColTyp .eq. 3) then
+            ColTyp3 = Line
+          else if (nColTyp .eq. 4) then
+            ColTyp4 = Line
+          end if
+        else
+          Chr = Line(1:1)              ! check for "\"
+          if (IChr .ne. 92) then
+            NLines = 1
+            MaxLen = LNBlnk(Line)
+            NTblHdr = NTblHdr - 1
+            go to 300
+          end if
+        end if
+        go to 10
+      end if
+c
+c-----------------------------------------------------------------------
+c
+300   read(IUnitIn, '(A5000)', end = 400, err = 3002) Line
+      NLines = NLines + 1
+      if (LNBlnk(Line) .gt. MaxLen) MaxLen = LNBlnk(Line)
+      go to 300
+c
+400   rewind(IUnitIn)
+      if (LNBlnk(Line) .eq. 0) NLines = NLines - 1  ! clip any blank
+      if (TblFil) then                              !  leftovers
+        do 410 N = 1, NTblHdr
+          read(IUnitIn, '(A5000)', end = 3003, err = 3004) Line
+410     continue
+      end if
+c
+      LRecL = MaxLen
+      if ((LRecL .lt. IA2) .or. (LRecL .lt. ID2) .or. (LRecL .lt. 2))
+     + go to 3009
+      call MakeFmtD(FmtLine,MaxLen)
+      RAmax =  -9999.9
+      RAmin =   9999.9
+      Decmax = -9999.9
+      Decmin =  9999.9
+      do 500 N = 1, NLines
+         read(IUnitIn, '(A5000)', end = 3005, err = 3006) Line
+         write(IUnitOut,FmtLine) Line(1:MaxLen)
+         read (Line(IA1:IA2), *, err = 420) RTmp
+         go to 430
+420      if (.not.SkipErr) go to 3007         
+430      if (RTmp .lt. RAmin) RAmin = RTmp
+         if (RTmp .gt. RAmax) RAmax = RTmp
+         read (Line(ID1:ID2), *, err = 440) RTmp
+         go to 450
+440      if (.not.SkipErr) go to 3008         
+450      if (RTmp .lt. Decmin) Decmin = RTmp
+         if (RTmp .gt. Decmax) Decmax = RTmp
+500   continue
+      return
+c
+c-----------------------------------------------------------------------
+c
+3000  print *,'ERROR: unexpected EoF while reading header of table file'
+      print *,'       ',FilNam(1:LNBlnk(FilNam))
+      OK = .False.
+      return
+c
+3001  print *,'ERROR: read error while reading header of table file'
+      print *,'       ',FilNam(1:LNBlnk(FilNam))
+      OK = .False.
+      return
+c
+3002  print *,'ERROR: read error while reading data in file'
+      print *,'       ',FilNam(1:LNBlnk(FilNam))
+      OK = .False.
+      return
+c
+3003  print *,'ERROR: unexpected EoF while reading header of table file'
+      print *,'       ',FilNam(1:LNBlnk(FilNam))
+      print *,'This error occurred on the second pass through the file'
+      OK = .False.
+      return
+c
+3004  print *,'ERROR: read error while reading header of table file'
+      print *,'       ',FilNam(1:LNBlnk(FilNam))
+      print *,'This error occurred on the second pass through the file'
+      OK = .False.
+      return
+c
+3005  print *,'ERROR: unexpected EoF while reading data in file'
+      print *,'       ',FilNam(1:LNBlnk(FilNam))
+      print *,'This error occurred on the second pass through the file'
+      OK = .False.
+      return
+c
+3006  print *,'ERROR: read error while data in file'
+      print *,'       ',FilNam(1:LNBlnk(FilNam))
+      print *,'This error occurred on the second pass through the file'
+      OK = .False.
+      return
+c
+3007  print *,'ERROR: read error on RA value '//Line(IA1:IA2)
+     +       //' in file'
+      print *,'       ',FilNam(1:LNBlnk(FilNam))
+      print *,'This error occurred on data line no. ', N
+      OK = .False.
+      return
+c
+3008  print *,'ERROR: read error on Dec value '//Line(IA1:IA2)
+     +       //' in file'
+      print *,'       ',FilNam(1:LNBlnk(FilNam))
+      print *,'This error occurred on data line no. ', N
+      OK = .False.
+      return
+c
+3009  print *,
+     + 'ERROR: data line length must be at least as long as the last'
+      print *,
+     + '       column in the RA field and the Dec field; found a length'
+      print *,
+     + '       of ',LRecL,' in file ',FilNam(1:LNBlnk(FilNam))
+      print *,
+     + '       last column in the RA field: ',IA2
+      print *,
+     + '       last column in the Dec field: ',ID2
+      OK = .False.
+      return
+c
+      end
+c
+c=======================================================================
+c
+      Subroutine MakeFmtD(FmtLine,L)
+c
+      Character*11 FmtLine
+      Character*4  Flen
+      Integer*4    L
+c
+c-----------------------------------------------------------------------
+c
+      write(Flen,'(I4)') L
+      FmtLine = '(A'//Flen//'$)'
+      return
+      end
+c
+c=======================================================================
+c
+      Function Best2Come(X1,Y1,Z1,
+     +         X2,Y2,Z2,Indx1,N2,Window,
+     +         NLines,N,ADist,Ang,
+     +         mdetID2,CatWISE,LRecL,IM1,IM2,
+     +         Coord1,Coord2)
+c=======================================================================
+c
+      Character*1 Chr(5000)
+      Character*5000 Line
+      Integer*4 NLines(2), Indx1(NLines(1)), N, N1, N2, NN, mdetID1,
+     +          mdetID2, LRecL, IM1,IM2, L
+      Real*8    X1(NLines(1)), Y1(NLines(1)), Z1(NLines(1)), Ang,
+     +          X2(NLines(2)), Y2(NLines(2)), Z2(NLines(2)), ADist,
+     +          Cross, Ang2
+      Real*8    Coord1(NLines(1)), Coord2(NLines(2)), Window
+      Logical   Best2Come, CatWISE
+      Equivalence   (Line, Chr(1))
+c
+c=======================================================================
+c
+      if (N .ge. NLines(1)) go to 1000
+      do 100 NN = N+1, NLines(1)
+        N1 = Indx1(NN)
+        if (abs(Coord1(N1)-Coord2(N2)) .gt. ADist) go to 100
+        if (abs(X1(N1)-X2(N2)) .gt. Window) go to 100
+        if (abs(Y1(N1)-Y2(N2)) .gt. Window) go to 100
+        if (abs(Z1(N1)-Z2(N2)) .gt. Window) go to 100
+        if (CatWISE) then
+          read(11, rec=N1, err = 1000) (Chr(L), L = 1, LRecl)
+          read (Line(IM1:IM2), *, err = 1000) mdetID1
+          if (mdetID1 .ne. mdetID2) go to 1000
+        end if
+        Cross = sqrt((Y1(N1)*Z2(N2) - Y2(N2)*Z1(N1))**2
+     +             + (Z1(N1)*X2(N2) - Z2(N2)*X1(N1))**2
+     +             + (X1(N1)*Y2(N2) - X2(N2)*Y1(N1))**2)
+        Ang2 = dasin(Cross)
+        if (Ang2 .lt. Ang) then
+          Best2Come = .True.
+          return
+        end if
+100   continue
+c
+1000  Best2Come = .False.
+c
+      return
+c
+      end
