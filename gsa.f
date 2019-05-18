@@ -49,6 +49,7 @@ c                       search from 1.1*Dist to 1.5*Dist; change all
 c                       reals to real*8 except in random-number gen.
 c          2.95 B81224: restored forcing Dec order when CatWISE = T;
 c                       added prints on RA/Dec min/max
+c          2.96 B90509: added -ar to allow RA order
 c
 c NOTE: when redelivering the linux version, be sure to set the path
 c       switch from "\" to "/" (search on "linux" to find the code)
@@ -100,13 +101,13 @@ c
      +               GotD1, GotD2, TblFil(2), GotRD, AllSrc1, AllAssn,
      +               OK, DecOrder, GotMatch, AllSrc2, Reject1, Reject2,
      +               MergOut, IndxOut, BmgColl8, Best2Come, BmgHed,
-     +               GotStat, CatWISE, SkipErr, nm2
+     +               GotStat, CatWISE, SkipErr, nm2, ForceDec
 c
       Equivalence   (Line, Chr(1))
 c
       Common / VDT / CDate, CTime, Vsn
 c
-      data Vsn/'2.95 B81224'/, NeedHelp/.False./, GotIn1/.False./,
+      data Vsn/'2.96 B90509'/, NeedHelp/.False./, GotIn1/.False./,
      +     GotIn2/.False./, GotA1/.False./, GotA2/.False./, IH2/60/,
      +     GotOut/.False./, GotD1/.False./, GotD2/.False./, NLines/2*0/,
      +     GotRD/.False./,AllSrc1/.True./, AllAssn/.True./, N1single/0/,
@@ -124,7 +125,8 @@ c
      +     IC1/-9,-9/, NAssns/0/, N2single/0/, BmgHed/.False./,
      +     IF2/0/, IPa1/0/, IPa2/0/, IPb1/0/, IPb2/0/, NB1/1/,
      +     GotStat/.false./, CatWISE/.false./, IM1,Im2/4*-9/,
-     +     SkipErr/.false./, TempDir/'./'/, nm2/.false./
+     +     SkipErr/.false./, TempDir/'./'/, nm2/.false./,
+     +     ForceDec/.true./
 c
 c-----------------------------------------------------------------------
 c
@@ -219,6 +221,8 @@ c
      +'                     treat as unmatchable source)'
         print *,
      +'    -td  tmpdir     (optional; temporary scratch directory name)'
+        print *,
+     +'    -ar             (optional; allow RA search order if faster'
         print *
         print *,
      +  'For general source association, the first eight specifications'
@@ -646,6 +650,9 @@ c
       Else If (Flag .eq. '-se') then
         SkipErr = .true.
 c
+      Else If (Flag .eq. '-ar') then
+        ForceDec = .false.
+c
       Else if (Flag .eq. '-td') then
         NArg = NArg + 1
         call GetArg(NArg,TempDir)
@@ -968,9 +975,9 @@ c       print *,'Dec min/max:',Decmin(1), Decmax(1)
       end if
 c     print *,'RA delta (true angle):', cos(d2r*AvgDec)*DeltRA
 c     print *,'Dec delta:            ', DeltDec
-      DecOrder = DeltDec .gt. cos(d2r*AvgDec)*DeltRA
-      DecOrder = DecOrder .or. (DeltRA .gt. 350.0) .or. CatWISE
-c     DecOrder = DecOrder .or. (DeltRA .gt. 350.0)
+      DecOrder = DeltDec .gt. 0.5*cos(d2r*AvgDec)*DeltRA
+      DecOrder = DecOrder .or. (DeltRA .gt. 180.0) .or. CatWISE
+     +      .or. ForceDec
       if (cos(d2r*AvgDec) .ne. 0.0) dRA = dRA/cos(d2r*AvgDec)
       if (DecOrder) then
         print *,'Output will be in ascending Dec order'
